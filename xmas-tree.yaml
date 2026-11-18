@@ -1,0 +1,105 @@
+# ESPHome config: Balsam Hill / Polygroup tree RF control
+# Board: ESP32-S3-DevKitC-1-N16R8
+# Protocol (from zerowidth.com + davecorder.org, Polygroup CW003 remote):
+#   433.92 MHz OOK, PPM. Sync 11450/-5275, bit = 1100 pulse + gap
+#   (-3100 = 1, -1100 = 0), 32 bits: ff 0f CMD ~CMD, tail 1100/-11450, x6.
+# Your PST03-14 remote is unverified: start with "Test Off", then sweep.
+
+esphome:
+  name: xmas-tree
+  friendly_name: Christmas Tree
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  framework:
+    type: esp-idf
+
+# N16R8 = octal PSRAM, which uses GPIO35-37. Don't use those pins.
+psram:
+  mode: octal
+  speed: 80MHz
+
+logger:
+api:
+ota:
+  - platform: esphome
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+# 433 MHz TX module (SYN115 / STX882 / FS1000A) DATA -> GPIO4.
+# Add a 17.3 cm wire antenna. Avoid strapping pins 0, 3, 45, 46.
+remote_transmitter:
+  id: tx
+  pin: GPIO4
+  carrier_duty_percent: 100%
+
+globals:
+  - id: last_cmd
+    type: uint8_t
+    initial_value: '0'
+
+script:
+  - id: send_cmd
+    mode: queued
+    parameters:
+      cmd: int
+    then:
+      - lambda: 'id(last_cmd) = cmd;'
+      - remote_transmitter.transmit_raw:
+          transmitter_id: tx
+          code: !lambda |-
+            std::vector<int32_t> out = {11450, -5275};
+            uint8_t c = (uint8_t) id(last_cmd);
+            uint32_t frame = (0xFFu << 24) | (0x0Fu << 16) | (c << 8) | (uint8_t)(~c);
+            for (int i = 31; i >= 0; i--) {
+              out.push_back(1100);
+              out.push_back(((frame >> i) & 1) ? -3100 : -1100);
+            }
+            out.push_back(1100);
+            out.push_back(-11450);
+            return out;
+          repeat:
+            times: 6
+            wait_time: 0s
+
+# Known CW003 command bytes. If "Test Off" works, your remote shares the protocol.
+button:
+  - platform: template
+    name: "Test Off"
+    on_press: [{script.execute: {id: send_cmd, cmd: 0x02}}]
+  - platform: template
+    name: "Test Color"
+    on_press: [{script.execute: {id: send_cmd, cmd: 0x03}}]
+  - platform: template
+    name: "Test Clear"
+    on_press: [{script.execute: {id: send_cmd, cmd: 0x04}}]
+  - platform: template
+    name: "Test Color + Clear"
+    on_press: [{script.execute: {id: send_cmd, cmd: 0x05}}]
+  - platform: template
+    name: "Test Brighter"
+    on_press: [{script.execute: {id: send_cmd, cmd: 0x01}}]
+  - platform: template
+    name: "Test Dimmer"
+    on_press: [{script.execute: {id: send_cmd, cmd: 0x00}}]
+
+  # Manual sweep: set "Sweep Command", press Send, watch the tree, log the result.
+  - platform: template
+    name: "Send Sweep Command"
+    on_press:
+      - script.execute:
+          id: send_cmd
+          cmd: !lambda 'return (int) id(sweep_cmd).state;'
+
+number:
+  - platform: template
+    id: sweep_cmd
+    name: "Sweep Command"
+    min_value: 0
+    max_value: 255
+    step: 1
+    optimistic: true
+    initial_value: 0
+    mode: box

@@ -1,0 +1,5 @@
+secrets.yaml
+.esphome/
+*.cu8
+*.sub
+.DS_Store

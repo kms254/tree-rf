@@ -27,6 +27,6 @@
 
 ## Optional: receive path
 
-SRX882 DATA to GPIO5, VCC to 5V through nothing extra only if the module's
-output is 3.3 V safe. Check the module before wiring. If unsure, power the
-receiver from 3V3. The SRX882 CS pin must be high to enable it.
+To capture the remote with the SRX882: DATA to GPIO5, VCC to 3V3, GND to GND,
+and tie the CS pin high to enable the module. Powering it from 3V3 keeps the
+DATA output safe for the ESP32.
